@@ -114,9 +114,11 @@ Le **sessioni** (`open_binary`, `binary_session`, `close_binary`) sono l'unica m
 
 ## 5. Superficie pubblica
 
-### 5.1 MCP — 173 tool
+### 5.1 MCP — 173 tool (170 nel pacchetto pubblicato 6.4.0)
 
-Inventario canonico: `src/contracts/toolContracts.ts` aggrega 25 array di contratti (`officialToolContracts`, `enhancedToolContracts`, `nativeToolContracts`, `sessionToolContracts`, `adb/adbToolContracts`, …). Il test `src/contracts/toolEffects.test.ts` **impone biiezione** tra i contratti e `TOOL_EFFECTS` (173 chiavi verificate al commit studiato).
+Inventario canonico: `src/contracts/toolContracts.ts` aggrega 25 array di contratti (`officialToolContracts`, `enhancedToolContracts`, `nativeToolContracts`, `sessionToolContracts`, `adb/adbToolContracts`, …). Il test `src/contracts/toolEffects.test.ts` **impone biiezione** tra i contratti e `TOOL_EFFECTS` (173 chiavi su `main`).
+
+**Verificato dal vivo (§18):** il pacchetto npm 6.4.0 annuncia **170 tool** via `tools/list`; i tre contratti in più presenti su `main` (`inspect_go_binary`, `inspect_wasm_artifact`, `project_harmony_application_graph`) sono stati aggiunti **dopo** la release 6.4.0.
 
 Famiglie principali:
 
@@ -320,7 +322,7 @@ CI (`.github/workflows/ci.yml`):
 4. **Concentrazione autoriale.** Un autore domina la storia (`morluto`, ~58% dei commit): bus factor basso, nonostante i molti contributori esterni.
 5. **Ritmo di release estremo** (v4.0.1 → v6.4.0 in 6 giorni). Il changelog è alto/basso per release: utile, ma rende difficile seguire le regressioni e suggerisce forte pressione sulle correzioni.
 6. **Dimensioni del risultato.** `analyze_javascript_application` può produrre Evidence da centinaia di MB (esempio documentato: 334 MB per Obsidian): il progetto lo affronta con viste, paginazione e export bundle, ma il modello dati resta pesante.
-7. **Nessuna verifica eseguita in questo studio.** Non ho eseguito `npm ci`/`npm run build`/test in sandbox (installazione grande, artefatti nativi Windows, lane che richiedono engine esterni): le affermazioni sul comportamento runtime derivano da codice, contratti e documentazione, non da esecuzione.
+7. **Verifica eseguita solo in parte (aggiornato).** Ho installato il pacchetto npm e provato dal vivo i percorsi JavaScript, plist/Apple, ELF via pwntools, handshake MCP e `doctor` (dettagli in §18). Restano **non eseguite** le lane che richiedono Hopper, Ghidra, IDA, JEB, browser, ADB, firmware e le build native Windows: le affermazioni su quei percorsi derivano da codice, contratti e documentazione, non da esecuzione.
 8. **Numeri GitHub e npm** sono snapshot al 2026-10-12 e non vanno usati come indicatori di qualità (le 132k stelle sono in parte un fenomeno virale).
 
 ---
@@ -371,6 +373,25 @@ npm run verify:test-discovery          # dopo aver aggiunto/spostato test
 ## 17. Domande aperte (per il passo successivo)
 
 1. **Perché questo studio?** Se l'obiettivo è un fork o un prodotto derivato (il repo di sessione `michelelomartire-del/IEH` è oggi vuoto) conviene decidere da subito se si eredita la disciplina di Evidence/sessioni o se si vuole un sottoinsieme (es. solo JavaScript/Electron, o solo nativi).
-2. **Serve una verifica eseguibile?** Posso provare `npm ci` + `npm run build:cached` + `npm run check:fast` in sandbox (niente engine commerciali: le lane `verify:hopper`/`verify:ghidra`/`verify:ida` resterebbero non eseguibili).
+2. **Serve una verifica eseguibile del repository?** Ho già eseguito il pacchetto pubblicato (§18). Posso anche provare `npm ci` + `npm run build:cached` + `npm run check:fast` sulla copia in `/home/user/rea` (niente engine commerciali: le lane `verify:hopper`/`verify:ghidra`/`verify:ida` resterebbero non eseguibili).
 3. **Serve un confronto mirato** tra REA e ciò che vuoi costruire in IEH (funzionalità, modello di evidenza, contratti MCP, setup multi-agente, packaging npm)?
 4. **Serve una lettura guidata di un'area specifica** (es. `src/browser/**` CDP, `src/ghidra/**` lifecycle, `src/application/Setup*` per l'integrazione con 18 client)?
+
+---
+
+## 18. Appendice: verifica dal vivo (2026-10-12)
+
+Ambiente: Debian 12 x86-64, Node 22.22.3, npm 10.9.8. Installazione: `npm install rea-agents` (pacchetto pubblico 6.4.0) in `/home/user/demo`; ambiente Python isolato con `pwntools 4.15.0`, `pyelftools 0.33`, `unicorn 2.1.2` per il provider ELF. Guide per l'utente non esperto: [`rea-per-principianti.md`](rea-per-principianti.md).
+
+| Prova | Comando | Esito osservato |
+| --- | --- | --- |
+| App/biblioteca JavaScript | `rea analyze-javascript-application ./node_modules/express --json` | 4,8 s, **7,0 MB** di Evidence; 8 file rilevanti, 7 file JS, 6.074 nodi AST, 172 finding, **4.261 nodi** nel grafo semantico; `confidence: derived`, `authority: shipped-artifact`, 5 limitazioni dichiarate |
+| App Electron sintetica (finestra + preload + 4 canali IPC) | `rea analyze-javascript-application ./mini-app --json` | 470 KB; `browser_windows: 1`, `preload_entrypoints: 1`, `context_bridge_apis: 1`, `exposed_api_members: 4`; IPC: 8 operazioni, 4 canali letterali, 4 handler main, 4 trasmissioni renderer, **4 accoppiate, 0 ambigue** |
+| ELF senza dipendenze | `rea inspect-binary-layout /bin/ls --json` | errore `provider_unavailable` con `remediation` esplicita (`REA_PWNTOOLS_PYTHON`, "REA never installs Python or packages") — il fallimento è tipizzato e azionabile |
+| ELF con pwntools | `REA_PWNTOOLS_PYTHON=.venv/bin/python rea inspect-binary-layout /bin/ls --json` | 2,2 s, 177 KB, `confidence: observed`, provider `pwntools@4.15.0;pyelftools@0.33;unicorn@2.1.2`; ELF x86-64 `ET_DYN`, entry `0x61d0` (`execution_status: unknown`), **31 sezioni, 13 segmenti, 127 simboli, 329 rilocazioni**; mitigazioni marcate `evidence_kind: inferred` (PIE/NX/canary sì, RELRO parziale) |
+| Handshake MCP reale | `rea mcp` + `initialize` + `tools/list` | server `rea 6.4.0`, protocollo `2025-06-18`, **170 tool** annunciati; il confronto con `TOOL_EFFECTS` di `main` mostra che i 3 mancanti sono aggiunte **post-6.4.0** |
+| Comandi Apple su Linux | `rea inspect-plist`, `rea demangle-swift` | `capability_unavailable: "Native macOS utilities require macOS."` — nessuna finta copertura |
+| Input errato | `rea demangle-swift _$s…` (senza `path`) | `VALIDATION_ERROR` strutturato con `path: ["symbols"]`, `missing: true` |
+| Diagnostica host | `rea doctor --json` | `environment_healthy: false` con cause esplicite: Node 22.22.3 ok, host debian 12, `GHIDRA_INSTALL_DIR is not set`, "IDA MCP registration is not configured", skill non installata |
+
+**Conclusione della prova:** le proprietà descritte nell'analisi statica (errori tipizzati con rimedio, confini di provider dichiarati, Evidence con provenienza/limiti, nessuna installazione di dipendenze esterne) si osservano nel prodotto reale, non solo nel codice. Restano non verificate le lane con engine commerciali (Hopper, IDA, JEB), il browser/CDP, ADB e le build native Windows.
